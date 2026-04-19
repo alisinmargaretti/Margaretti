@@ -110,7 +110,7 @@ def generate_auto_schedule(plan_bases_total, plan_pizza, b_perf, a_perf, shifts_
 with st.sidebar.expander("🏗️ Настройки цеха", expanded=False):
     b_limit = st.number_input("Макс. основ/смену", value=1800)
     p_limit = st.number_input("Пицц на сборщика", value=250)
-    a_shok = st.number_input("Количество сборщиков", value=4)
+    a_shok = st.number_input("Макс кол-во сборщиков", value=4)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("👨‍🍳 Цех выпечки")

@@ -64,6 +64,7 @@ def get_month_data(m_key):
         }
     return st.session_state.month_data[m_key]
 
+# --- БОКОВАЯ ПАНЕЛЬ ---
 now = datetime.now()
 sel_month_name = st.sidebar.selectbox("📅 Месяц", list(MONTHS_RU.values()), index=now.month-1)
 sel_month_idx = [k for k, v in MONTHS_RU.items() if v == sel_month_name][0]
@@ -107,11 +108,10 @@ def generate_auto_schedule(plan_bases_total, plan_pizza, b_perf, a_perf, shifts_
         schedule[emp["Имя"]] = row
     return pd.DataFrame(schedule, index=range(1, n_days+1)).T
 
-
-st.sidebar.expander("🏗️ Настройки цеха", expanded=False):
+with st.sidebar.expander("🏗️ Настройки цеха", expanded=False):
     b_limit = st.number_input("Макс. основ/смену", value=1800)
     p_limit = st.number_input("Пицц на сборщика", value=250)
-    a_shok = st.number_input("Макс кол-во сборщиков", value=4)
+    a_shok = st.number_input("Количество сборщиков", value=4)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("👨‍🍳 Цех выпечки")
@@ -133,6 +133,7 @@ for i, a in enumerate(m_store["staff_assemblers"]):
     if c4.button("❌", key=f"ad_del_{i}_{m_key}"): remove_assembler(i)
 st.sidebar.button("➕ Добавить сборщика", on_click=add_assembler)
 
+# --- ГЛАВНАЯ ПАНЕЛЬ ---
 st.title(f"🍕 {sel_month_name} {sel_year}")
 col_p1, col_p2, col_p3 = st.columns(3)
 with col_p1: 

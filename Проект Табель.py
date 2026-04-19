@@ -58,11 +58,37 @@ MONTHS_RU = {
 def get_month_data(m_key):
     if m_key not in st.session_state.month_data:
         st.session_state.month_data[m_key] = {
-            "staff_bakers": [{"Имя": f"Пекарь {i+1}", "Ставка": 3500.0, "Начало": 1} for i in range(6)],
-            "staff_assemblers": [{"Имя": f"Сборщик {i+1}", "Ставка": 3000.0, "Начало": 1} for i in range(4)],
+            "staff_bakers": [{"Имя": f"Пекарь {i+1}", "Ставка": 3500.0, "Начало": 1, "Тип": "Черная", "Оф_часть": 0.0, "Vacation": []} for i in range(6)],
+            "staff_assemblers": [{"Имя": f"Сборщик {i+1}", "Ставка": 3000.0, "Начало": 1, "Тип": "Черная", "Оф_часть": 0.0, "Vacation": []} for i in range(4)],
+            "staff_office": [
+                {"Имя": "Руководитель производства", "Оклад": 80000.0, "Тип": "Черная", "Оф_часть": 0.0, "Vacation": []},
+                {"Имя": "Менеджер", "Оклад": 50000.0, "Тип": "Черная", "Оф_часть": 0.0, "Vacation": []},
+                {"Имя": "Бухгалтер", "Оклад": 45000.0, "Тип": "Черная", "Оф_часть": 0.0, "Vacation": []},
+                {"Имя": "Директор по развитию", "Оклад": 100000.0, "Тип": "Черная", "Оф_часть": 0.0, "Vacation": []}
+            ],
             "plans": {"pb": 30000, "pp": 10000, "mode": "1 смена (12ч)"}
         }
-    return st.session_state.month_data[m_key]
+    
+    # ПРОВЕРКА ЦЕЛОСТНОСТИ ДАННЫХ
+    m_data = st.session_state.month_data[m_key]
+    for category in ["staff_bakers", "staff_assemblers", "staff_office"]:
+        if category in m_data:
+            for i in range(len(m_data[category])):
+                if "Тип" not in m_data[category][i]: m_data[category][i]["Тип"] = "Черная"
+                if "Оф_часть" not in m_data[category][i]: m_data[category][i]["Оф_часть"] = 0.0
+                if "Vacation" not in m_data[category][i]: m_data[category][i]["Vacation"] = []
+                # Миграция старых дат в список (если были)
+                if not isinstance(m_data[category][i]["Vacation"], list):
+                    m_data[category][i]["Vacation"] = []
+    
+    if "staff_office" not in m_data:
+        m_data["staff_office"] = [
+            {"Имя": "Руководитель производства", "Оклад": 80000.0},
+            {"Имя": "Менеджер", "Оклад": 50000.0},
+            {"Имя": "Бухгалтер", "Оклад": 45000.0},
+            {"Имя": "Директор по развитию", "Оклад": 100000.0}
+        ]
+    return m_data
 
 # --- БОКОВАЯ ПАНЕЛЬ ---
 now = datetime.now()
@@ -73,10 +99,12 @@ m_key = f"{sel_month_idx}_{sel_year}"
 m_store = get_month_data(m_key)
 num_days = calendar.monthrange(sel_year, sel_month_idx)[1]
 
-def add_baker(): m_store["staff_bakers"].append({"Имя": "Новый пекарь", "Ставка": 3500.0, "Начало": 1}); save_data()
-def add_assembler(): m_store["staff_assemblers"].append({"Имя": "Новый сборщик", "Ставка": 3000.0, "Начало": 1}); save_data()
+def add_baker(): m_store["staff_bakers"].append({"Имя": "Новый пекарь", "Ставка": 3500.0, "Начало": 1, "Тип": "Черная", "Оф_часть": 0.0}); save_data()
+def add_assembler(): m_store["staff_assemblers"].append({"Имя": "Новый сборщик", "Ставка": 3000.0, "Начало": 1, "Тип": "Черная", "Оф_часть": 0.0}); save_data()
 def remove_baker(index): m_store["staff_bakers"].pop(index); save_data(); st.rerun()
 def remove_assembler(index): m_store["staff_assemblers"].pop(index); save_data(); st.rerun()
+def add_office(): m_store["staff_office"].append({"Имя": "Новый сотрудник", "Оклад": 50000.0, "Тип": "Черная", "Оф_часть": 0.0}); save_data()
+def remove_office(index): m_store["staff_office"].pop(index); save_data(); st.rerun()
 
 def generate_auto_schedule(plan_bases_total, plan_pizza, b_perf, a_perf, shifts_day, n_days, bakers, assemblers):
     b_shifts_needed = int(np.ceil(plan_bases_total / b_perf / shifts_day)) if b_perf > 0 else 0
@@ -88,9 +116,10 @@ def generate_auto_schedule(plan_bases_total, plan_pizza, b_perf, a_perf, shifts_
     schedule = {}
     for emp in bakers:
         s_idx = emp.get("Начало", 1) - 1
+        vaca = emp.get("Vacation", [])
         row = [0.0] * n_days
         for d_idx in common_b_days:
-            if d_idx >= s_idx:
+            if d_idx >= s_idx and (d_idx + 1) not in vaca:
                 row[d_idx] = 12.0
         schedule[emp["Имя"]] = row
 
@@ -100,37 +129,106 @@ def generate_auto_schedule(plan_bases_total, plan_pizza, b_perf, a_perf, shifts_
     
     for emp in assemblers:
         s = emp.get("Начало", 1)
-        avail = n_days - s + 1
-        indices = np.linspace(s-1, n_days-1, min(shifts_per_assm * shifts_day, avail), dtype=int) if avail > 0 else []
+        vaca = emp.get("Vacation", [])
+        avail_indices = [idx for idx in range(s-1, n_days) if (idx + 1) not in vaca]
+        
         row = [0.0] * n_days
-        for idx in indices: row[idx] = 12.0
+        needed = shifts_per_assm * shifts_day
+        # Простой алгоритм распределения по доступным дням
+        for count, idx in enumerate(avail_indices):
+            if count < needed:
+                row[idx] = 12.0
         schedule[emp["Имя"]] = row
     return pd.DataFrame(schedule, index=range(1, n_days+1)).T
 
 with st.sidebar.expander("🏗️ Настройки цеха", expanded=False):
     b_limit = st.number_input("Макс. основ/смену", value=1800)
     p_limit = st.number_input("Пицц на сборщика", value=250)
-    a_shok = st.number_input("Макс кол-во сборщиков", value=4)
+    a_shok = st.number_input("Количество сборщиков", value=4)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("👨‍🍳 Цех выпечки")
 for i, b in enumerate(m_store["staff_bakers"]):
-    c1, c2, c3, c4 = st.sidebar.columns([3, 2, 2, 1])
-    m_store["staff_bakers"][i]["Имя"] = c1.text_input(f"bn_{i}", b["Имя"], key=f"v_bn_{i}_{m_key}", label_visibility="collapsed")
-    m_store["staff_bakers"][i]["Ставка"] = c2.number_input(f"bs_{i}", value=float(b["Ставка"]), key=f"v_bs_{i}_{m_key}", label_visibility="collapsed")
-    m_store["staff_bakers"][i]["Начало"] = c3.number_input(f"bd_{i}", 1, num_days, int(b.get("Начало", 1)), key=f"v_bd_s_{i}_{m_key}", label_visibility="collapsed")
-    if c4.button("❌", key=f"bd_del_{i}_{m_key}"): remove_baker(i)
+    with st.sidebar.expander(f"👤 {b['Имя']}", expanded=False):
+        m_store["staff_bakers"][i]["Имя"] = st.text_input("Имя", b["Имя"], key=f"v_bn_{i}_{m_key}")
+        c1, c2 = st.columns(2)
+        m_store["staff_bakers"][i]["Ставка"] = c1.number_input("Ставка (за смену)", value=float(b["Ставка"]), key=f"v_bs_{i}_{m_key}")
+        m_store["staff_bakers"][i]["Начало"] = c2.number_input("Дата выхода (число)", 1, num_days, int(b.get("Начало", 1)), key=f"v_bd_s_{i}_{m_key}")
+        
+        pay_type = st.selectbox("Тип оплаты", ["Белая", "Черная", "Серая"], index=["Белая", "Черная", "Серая"].index(b.get("Тип", "Черная")), key=f"bt_{i}_{m_key}")
+        m_store["staff_bakers"][i]["Тип"] = pay_type
+        if pay_type == "Серая":
+            m_store["staff_bakers"][i]["Оф_часть"] = st.number_input("Офиц. часть (на карту)", value=float(b.get("Оф_часть", 0.0)), key=f"bo_{i}_{m_key}")
+        
+        # Календарь отсутствий через выбор диапазона
+        st.write("📅 Период отсутствия")
+        v_dates = st.date_input(
+            "Выберите диапазон",
+            value=[],
+            key=f"bv_date_{i}_{m_key}",
+            min_value=datetime(sel_year, sel_month_idx, 1),
+            max_value=datetime(sel_year, sel_month_idx, num_days)
+        )
+        if isinstance(v_dates, (list, tuple)) and len(v_dates) == 2:
+            d_range = pd.date_range(v_dates[0], v_dates[1]).day.tolist()
+            if m_store["staff_bakers"][i]["Vacation"] != d_range:
+                m_store["staff_bakers"][i]["Vacation"] = d_range
+                save_data()
+        elif isinstance(v_dates, (list, tuple)) and len(v_dates) == 1:
+             m_store["staff_bakers"][i]["Vacation"] = [v_dates[0].day]
+             save_data()
+        
+        if st.button("Удалить сотрудника", key=f"bd_del_{i}_{m_key}"): remove_baker(i)
 st.sidebar.button("➕ Добавить пекаря", on_click=add_baker)
 
 st.sidebar.divider()
 st.sidebar.subheader("🛠️ Цех сборки")
 for i, a in enumerate(m_store["staff_assemblers"]):
-    c1, c2, c3, c4 = st.sidebar.columns([3, 2, 2, 1])
-    m_store["staff_assemblers"][i]["Имя"] = c1.text_input(f"an_{i}", a["Имя"], key=f"v_an_{i}_{m_key}", label_visibility="collapsed")
-    m_store["staff_assemblers"][i]["Ставка"] = c2.number_input(f"as_{i}", value=float(a["Ставка"]), key=f"v_as_{i}_{m_key}", label_visibility="collapsed")
-    m_store["staff_assemblers"][i]["Начало"] = c3.number_input(f"ad_{i}", 1, num_days, int(a.get("Начало", 1)), key=f"v_ad_s_{i}_{m_key}", label_visibility="collapsed")
-    if c4.button("❌", key=f"ad_del_{i}_{m_key}"): remove_assembler(i)
+    with st.sidebar.expander(f"👤 {a['Имя']}", expanded=False):
+        m_store["staff_assemblers"][i]["Имя"] = st.text_input("Имя", a["Имя"], key=f"v_an_{i}_{m_key}")
+        c1, c2 = st.columns(2)
+        m_store["staff_assemblers"][i]["Ставка"] = c1.number_input("Ставка (за смену)", value=float(a["Ставка"]), key=f"v_as_{i}_{m_key}")
+        m_store["staff_assemblers"][i]["Начало"] = c2.number_input("Дата выхода (число)", 1, num_days, int(a.get("Начало", 1)), key=f"v_ad_s_{i}_{m_key}")
+        
+        pay_type = st.selectbox("Тип оплаты", ["Белая", "Черная", "Серая"], index=["Белая", "Черная", "Серая"].index(a.get("Тип", "Черная")), key=f"at_{i}_{m_key}")
+        m_store["staff_assemblers"][i]["Тип"] = pay_type
+        if pay_type == "Серая":
+            m_store["staff_assemblers"][i]["Оф_часть"] = st.number_input("Офиц. часть (на карту)", value=float(a.get("Оф_часть", 0.0)), key=f"ao_{i}_{m_key}")
+        
+        st.write("📅 Период отсутствия")
+        v_dates_a = st.date_input(
+            "Выберите диапазон",
+            value=[],
+            key=f"av_date_{i}_{m_key}",
+            min_value=datetime(sel_year, sel_month_idx, 1),
+            max_value=datetime(sel_year, sel_month_idx, num_days)
+        )
+        if isinstance(v_dates_a, (list, tuple)) and len(v_dates_a) == 2:
+            d_range = pd.date_range(v_dates_a[0], v_dates_a[1]).day.tolist()
+            if m_store["staff_assemblers"][i]["Vacation"] != d_range:
+                m_store["staff_assemblers"][i]["Vacation"] = d_range
+                save_data()
+        elif isinstance(v_dates_a, (list, tuple)) and len(v_dates_a) == 1:
+            m_store["staff_assemblers"][i]["Vacation"] = [v_dates_a[0].day]
+            save_data()
+
+        if st.button("Удалить сотрудника", key=f"ad_del_{i}_{m_key}"): remove_assembler(i)
 st.sidebar.button("➕ Добавить сборщика", on_click=add_assembler)
+
+st.sidebar.divider()
+st.sidebar.subheader("🏢 Офис")
+for i, o in enumerate(m_store.get("staff_office", [])):
+    with st.sidebar.expander(f"🏢 {o['Имя']}", expanded=False):
+        m_store["staff_office"][i]["Имя"] = st.text_input("Имя", o["Имя"], key=f"v_on_{i}_{m_key}")
+        m_store["staff_office"][i]["Оклад"] = st.number_input("Оклад (за месяц)", value=float(o["Оклад"]), key=f"v_os_{i}_{m_key}")
+        
+        pay_type = st.selectbox("Тип оплаты", ["Белая", "Черная", "Серая"], index=["Белая", "Черная", "Серая"].index(o.get("Тип", "Черная")), key=f"ot_{i}_{m_key}")
+        m_store["staff_office"][i]["Тип"] = pay_type
+        if pay_type == "Серая":
+            m_store["staff_office"][i]["Оф_часть"] = st.number_input("Офиц. часть (на карту)", value=float(o.get("Оф_часть", 0.0)), key=f"oo_{i}_{m_key}")
+        
+        if st.button("Удалить сотрудника", key=f"o_del_{i}_{m_key}"): remove_office(i)
+st.sidebar.button("➕ Добавить сотрудника офиса", on_click=add_office)
 
 # --- ГЛАВНАЯ ПАНЕЛЬ ---
 st.title(f"🍕 {sel_month_name} {sel_year}")
@@ -181,6 +279,9 @@ def get_circle(h):
     if h > 0:   return f'<span style="color: #fd7e14; white-space: nowrap;">🟠 {int(h) if h == int(h) else h}ч</span>'
     return '<span style="color: #6c757d; white-space: nowrap;">⚪ 0ч</span>'
 
+def format_rub(x):
+    return f"{int(x):,} ₽".replace(",", " ")
+
 with st.expander("📋 Визуальный контроль смен", expanded=True):
     t_b, t_a = st.tabs(["👨‍🍳 Цех выпечки", "🛠️ Цех сборки"])
     st.markdown("""
@@ -204,36 +305,183 @@ with st.expander("📋 Визуальный контроль смен", expanded
             st.markdown(f'<div class="scroll-container">{html_table}</div>', unsafe_allow_html=True)
 
 st.subheader("💰 Ведомость выплат")
-b_r, a_r = [], []
+
 cur_df = st.session_state.history[m_key]
-for e in m_store["staff_bakers"]:
-    if e["Имя"] in cur_df.index:
-        h = cur_df.loc[e["Имя"]].sum()
-        p = (h/12)*e["Ставка"]
-        b_r.append({"Сотрудник": e["Имя"], "Часы": int(h), "Зарплата": int(p)})
-for e in m_store["staff_assemblers"]:
-    if e["Имя"] in cur_df.index:
-        h = cur_df.loc[e["Имя"]].sum()
-        p = (h/12)*e["Ставка"]
-        a_r.append({"Сотрудник": e["Имя"], "Часы": int(h), "Зарплата": int(p)})
-cv1, cv2 = st.columns(2)
-with cv1:
-    st.markdown("#### 👨‍🍳 Выпечка")
-    if b_r:
-        db = pd.DataFrame(b_r)
-        tb = db.Зарплата.sum()
-        db.Зарплата = db.Зарплата.apply(lambda x: f"{x:,} ₽".replace(",", " "))
-        st.table(db)
-        st.write(f"**Итого: {int(tb):,} ₽**".replace(",", " "))
-    else: tb = 0
-with cv2:
-    st.markdown("#### 🛠️ Сборка")
-    if a_r:
-        da = pd.DataFrame(a_r)
-        ta = da.Зарплата.sum()
-        da.Зарплата = da.Зарплата.apply(lambda x: f"{x:,} ₽".replace(",", " "))
-        st.table(da)
-        st.write(f"**Итого: {int(ta):,} ₽**".replace(",", " "))
-    else: ta = 0
+# Приводим индексы к числам для удобства срезов
+cur_df.columns = [int(c) for c in cur_df.columns]
+
+def calculate_payroll(staff_list, df):
+    results = []
+    for e in staff_list:
+        name = e["Имя"]
+        if name in df.index:
+            row = df.loc[name]
+            h1 = row.loc[[d for d in row.index if d <= 15]].sum()
+            p1 = (h1/12) * e["Ставка"]
+            h2 = row.loc[[d for d in row.index if d > 15]].sum()
+            p2 = (h2/12) * e["Ставка"]
+            
+            total_hours = row.sum()
+            total_money = p1 + p2
+            pay_type = e.get("Тип", "Черная")
+            official_total = 0.0
+            if pay_type == "Белая": official_total = total_money
+            elif pay_type == "Серая": official_total = float(e.get("Оф_часть", 0.0))
+            
+            off_p1 = official_total * 0.5
+            off_p2 = official_total * 0.5
+            env_p1 = max(0.0, p1 - off_p1)
+            env_p2 = max(0.0, p2 - off_p2)
+            
+            results.append({
+                "Сотрудник": name,
+                "Часы (факт)": int(total_hours),
+                "Аванс (Безнал)": int(off_p1),
+                "Аванс (Нал)": int(env_p1),
+                "Расчет (Безнал)": int(off_p2),
+                "Расчет (Нал)": int(env_p2),
+                "Итого": int(total_money)
+            })
+    return pd.DataFrame(results)
+
+res_b = calculate_payroll(m_store["staff_bakers"], cur_df)
+res_a = calculate_payroll(m_store["staff_assemblers"], cur_df)
+
+# Офисные сотрудники: делим оклад 50/50 на аванс и расчет
+res_o = []
+for e in m_store.get("staff_office", []):
+    oklad = e["Оклад"]
+    p1 = oklad * 0.5
+    p2 = oklad * 0.5
+    total = oklad
+    
+    pay_type = e.get("Тип", "Черная")
+    official_total = 0.0
+    if pay_type == "Белая": official_total = total
+    elif pay_type == "Серая": official_total = float(e.get("Оф_часть", 0.0))
+
+    off_p1 = official_total * 0.5
+    off_p2 = official_total * 0.5
+    env_p1 = max(0.0, p1 - off_p1)
+    env_p2 = max(0.0, p2 - off_p2)
+
+    res_o.append({
+        "Сотрудник": e["Имя"],
+        "Аванс (Безнал)": int(off_p1),
+        "Аванс (Нал)": int(env_p1),
+        "Расчет (Безнал)": int(off_p2),
+        "Расчет (Нал)": int(env_p2),
+        "Итого": int(total)
+    })
+res_o = pd.DataFrame(res_o)
+
+# CSS для центровки колонок в st.dataframe
+st.markdown("""
+    <style>
+    /* Центрирование заголовков и ячеек в st.dataframe */
+    [data-testid="stDataFrame"] td, 
+    [data-testid="stDataFrame"] th,
+    [data-testid="stTable"] td,
+    [data-testid="stTable"] th {
+        text-align: center !important;
+    }
+    /* Дополнительное правило для выравнивания текста внутри ячеек */
+    div[data-testid="stExpander"] div[role="row"] div[role="cell"] {
+        justify-content: center !important;
+        text-align: center !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+t1, t2, t3 = st.tabs(["👨‍🍳 Цех выпечки", "🛠️ Цех сборки", "🏢 Офис"])
+
+def generate_pay_slip(name, data):
+    summary = f"""
+    *** РАСЧЕТНЫЙ ЛИСТОК: {name} ***
+    Месяц: {sel_month_name} {sel_year}
+    -----------------------------------
+    АВАНС (выплата 20-го):
+    - На карту (Безнал): {format_rub(data['Аванс (Безнал)'])}
+    - В конверт (Нал): {format_rub(data['Аванс (Нал)'])}
+    
+    РАСЧЕТ (выплата 5-го):
+    - На карту (Безнал): {format_rub(data['Расчет (Безнал)'])}
+    - В конверт (Нал): {format_rub(data['Расчет (Нал)'])}
+    -----------------------------------
+    ИТОГО ЗА МЕСЯЦ: {format_rub(data['Итого'])}
+    """
+    return summary
+
+with t1:
+    if not res_b.empty:
+        styled_df = res_b.copy()
+        cols_to_format = ["Аванс (Безнал)", "Аванс (Нал)", "Расчет (Безнал)", "Расчет (Нал)", "Итого"]
+        for col in cols_to_format:
+            styled_df[col] = styled_df[col].apply(lambda x: format_rub(x))
+        
+        html = styled_df.to_html(index=False, escape=False)
+        html = html.replace('<thead>', '<thead style="background-color: #ffffff; color: #000000;">')
+        html = html.replace('<table>', '<table style="width:100%; border-collapse: collapse; text-align: center; color: white;">')
+        html = html.replace('<th>', '<th style="text-align: center; padding: 12px; border: 1px solid #444; color: #000000;">')
+        html = html.replace('<td>', '<td style="text-align: center; padding: 10px; border: 1px solid #444;">')
+        st.markdown(html, unsafe_allow_html=True)
+        
+        s_a_bez = res_b["Аванс (Безнал)"].sum()
+        s_a_nal = res_b["Аванс (Нал)"].sum()
+        s_r_bez = res_b["Расчет (Безнал)"].sum()
+        s_r_nal = res_b["Расчет (Нал)"].sum()
+    else: s_a_bez = s_a_nal = s_r_bez = s_r_nal = 0
+
+with t2:
+    if not res_a.empty:
+        styled_df_a = res_a.copy()
+        cols_to_format = ["Аванс (Безнал)", "Аванс (Нал)", "Расчет (Безнал)", "Расчет (Нал)", "Итого"]
+        for col in cols_to_format:
+            styled_df_a[col] = styled_df_a[col].apply(lambda x: format_rub(x))
+            
+        html_a = styled_df_a.to_html(index=False, escape=False)
+        html_a = html_a.replace('<thead>', '<thead style="background-color: #ffffff; color: #000000;">')
+        html_a = html_a.replace('<table>', '<table style="width:100%; border-collapse: collapse; text-align: center; color: white;">')
+        html_a = html_a.replace('<th>', '<th style="text-align: center; padding: 12px; border: 1px solid #444; color: #000000;">')
+        html_a = html_a.replace('<td>', '<td style="text-align: center; padding: 10px; border: 1px solid #444;">')
+        st.markdown(html_a, unsafe_allow_html=True)
+
+        s_a_bez += res_a["Аванс (Безнал)"].sum()
+        s_a_nal += res_a["Аванс (Нал)"].sum()
+        s_r_bez += res_a["Расчет (Безнал)"].sum()
+        s_r_nal += res_a["Расчет (Нал)"].sum()
+
+with t3:
+    if not res_o.empty:
+        styled_df_o = res_o.copy()
+        cols_to_format = ["Аванс (Безнал)", "Аванс (Нал)", "Расчет (Безнал)", "Расчет (Нал)", "Итого"]
+        for col in cols_to_format:
+            styled_df_o[col] = styled_df_o[col].apply(lambda x: format_rub(x))
+            
+        html_o = styled_df_o.to_html(index=False, escape=False)
+        html_o = html_o.replace('<thead>', '<thead style="background-color: #ffffff; color: #000000;">')
+        html_o = html_o.replace('<table>', '<table style="width:100%; border-collapse: collapse; text-align: center; color: white;">')
+        html_o = html_o.replace('<th>', '<th style="text-align: center; padding: 12px; border: 1px solid #444; color: #000000;">')
+        html_o = html_o.replace('<td>', '<td style="text-align: center; padding: 10px; border: 1px solid #444;">')
+        st.markdown(html_o, unsafe_allow_html=True)
+        
+        s_a_bez += res_o["Аванс (Безнал)"].sum()
+        s_a_nal += res_o["Аванс (Нал)"].sum()
+        s_r_bez += res_o["Расчет (Безнал)"].sum()
+        s_r_nal += res_o["Расчет (Нал)"].sum()
+
 st.divider()
-st.metric("ОБЩИЙ ФОНД ВЫПЛАТ", f"{int(tb + ta):,} ₽".replace(",", " "))
+c_total1, c_total2 = st.columns(2)
+with c_total1:
+    st.markdown("#### 📅 К 20-МУ ЧИСЛУ (АВАНС)")
+    st.write(f"💳 По безналу: **{format_rub(s_a_bez)}**")
+    st.write(f"💰 Наличными: **{format_rub(s_a_nal)}**")
+    st.metric("ИТОГО АВАНС", format_rub(s_a_bez + s_a_nal))
+with c_total2:
+    st.markdown("#### 📅 К 5-МУ ЧИСЛУ (РАСЧЕТ)")
+    st.write(f"💳 По безналу: **{format_rub(s_r_bez)}**")
+    st.write(f"💰 Наличными: **{format_rub(s_r_nal)}**")
+    st.metric("ИТОГО РАСЧЕТ", format_rub(s_r_bez + s_r_nal))
+
+st.divider()
+st.metric("ОБЩИЙ ФОНД МЕСЯЦА", format_rub(s_a_bez + s_a_nal + s_r_bez + s_r_nal))

@@ -115,8 +115,6 @@ def generate_auto_schedule(plan_bases_total, plan_pizza, b_perf, a_perf, shifts_
         schedule[emp["Имя"]] = row
         
     return pd.DataFrame(schedule, index=range(1, n_days+1)).T
-
-
 st.sidebar.header("⚙️ Настройки")
 with st.sidebar.expander("🏗️ Параметры производства", expanded=False):
     b_limit = st.number_input("Макс. основ/смену", value=1800)

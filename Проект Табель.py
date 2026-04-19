@@ -109,7 +109,7 @@ st.sidebar.header("⚙️ Настройки")
 with st.sidebar.expander("🏗️ Параметры производства", expanded=False):
     b_limit = st.number_input("Макс. основ/смену", value=1800)
     p_limit = st.number_input("Пицц на сборщика", value=250)
-    a_shok = st.number_input("Количество сборщиков", value=4)
+    a_shok = st.number_input("Макс кол-во сборщиков", value=4)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("👨‍🍳 Цех выпечки")

@@ -188,10 +188,10 @@ with st.expander("📋 Визуальный контроль смен", expanded
     a_names = [a["Имя"] for a in m_store["staff_assemblers"]]
     with t_b:
         df_b = st.session_state.history[m_key][st.session_state.history[m_key].index.isin(b_names)]
-        if not df_b.empty: st.write(df_b.applymap(get_circle).to_html(escape=False), unsafe_allow_html=True)
+        if not df_b.empty: st.write(df_b.map(get_circle).to_html(escape=False), unsafe_allow_html=True)
     with t_a:
         df_a = st.session_state.history[m_key][st.session_state.history[m_key].index.isin(a_names)]
-        if not df_a.empty: st.write(df_a.applymap(get_circle).to_html(escape=False), unsafe_allow_html=True)
+        if not df_a.empty: st.write(df_a.map(get_circle).to_html(escape=False), unsafe_allow_html=True)
 
 st.subheader("💰 Ведомость выплат")
 b_r, a_r = [], []

@@ -78,29 +78,22 @@ def remove_baker(index): m_store["staff_bakers"].pop(index); save_data(); st.rer
 def remove_assembler(index): m_store["staff_assemblers"].pop(index); save_data(); st.rerun()
 
 def generate_auto_schedule(plan_bases_total, plan_pizza, b_perf, a_perf, shifts_day, n_days, bakers, assemblers):
-    # Рассчитываем, сколько ВСЕГО смен цеха выпечки нужно на месяц
-    # Смена цеха = работа сразу всех пекарей
-    total_needed_b_shifts = int(np.ceil(plan_bases_total / b_perf / shifts_day)) if b_perf > 0 else 0
-    
-    # Определяем ДНИ, в которые будет работать цех выпечки (равномерно по месяцу)
-    if total_needed_b_shifts > 0:
-        # Выбираем дни работы (например, каждый 2-й день и т.д.)
-        b_work_days = np.linspace(0, n_days - 1, min(total_needed_b_shifts, n_days), dtype=int)
+    # Одна смена цеха = работа всей группы пекарей одновременно
+    b_shifts_needed = int(np.ceil(plan_bases_total / b_perf / shifts_day)) if b_perf > 0 else 0
+    if b_shifts_needed > 0:
+        common_b_days = np.linspace(0, n_days - 1, min(b_shifts_needed, n_days), dtype=int)
     else:
-        b_work_days = []
+        common_b_days = []
 
     schedule = {}
-    
-    # Назначаем эти выбранные дни ВСЕМ пекарям
     for emp in bakers:
+        s_idx = emp.get("Начало", 1) - 1
         row = [0.0] * n_days
-        start_day = emp.get("Начало", 1) - 1 # Учет дня выхода на работу
-        for day_idx in b_work_days:
-            if day_idx >= start_day:
-                row[day_idx] = 12.0
+        for d_idx in common_b_days:
+            if d_idx >= s_idx:
+                row[d_idx] = 12.0
         schedule[emp["Имя"]] = row
 
-    # Логика для сборщиков (остается прежней — они могут работать гибко)
     p_shifts_total = int(np.ceil(plan_pizza / a_perf)) if a_perf > 0 else 0
     num_a = len(assemblers)
     shifts_per_assm = int(np.ceil(p_shifts_total / num_a / shifts_day)) if num_a > 0 else 0
@@ -108,13 +101,12 @@ def generate_auto_schedule(plan_bases_total, plan_pizza, b_perf, a_perf, shifts_
     for emp in assemblers:
         s = emp.get("Начало", 1)
         avail = n_days - s + 1
-        # Сборщиков распределяем индивидуально, так как их работа более дробная
         indices = np.linspace(s-1, n_days-1, min(shifts_per_assm * shifts_day, avail), dtype=int) if avail > 0 else []
         row = [0.0] * n_days
         for idx in indices: row[idx] = 12.0
         schedule[emp["Имя"]] = row
-        
     return pd.DataFrame(schedule, index=range(1, n_days+1)).T
+
 st.sidebar.header("⚙️ Настройки")
 with st.sidebar.expander("🏗️ Параметры производства", expanded=False):
     b_limit = st.number_input("Макс. основ/смену", value=1800)
@@ -191,32 +183,15 @@ def get_circle(h):
 
 with st.expander("📋 Визуальный контроль смен", expanded=True):
     t_b, t_a = st.tabs(["👨‍🍳 Цех выпечки", "🛠️ Цех сборки"])
-    
     st.markdown("""
         <style>
-        .scroll-container {
-            width: 100%;
-            overflow-x: auto;
-            border: 1px solid #444;
-            border-radius: 5px;
-            margin-bottom: 20px;
-        }
-        .scroll-container table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        .scroll-container th, .scroll-container td {
-            text-align: center;
-            padding: 8px;
-            border: 1px solid #444;
-            white-space: nowrap;
-        }
+        .scroll-container { width: 100%; overflow-x: auto; border: 1px solid #444; border-radius: 5px; margin-bottom: 20px; }
+        .scroll-container table { width: 100%; border-collapse: collapse; }
+        .scroll-container th, .scroll-container td { text-align: center; padding: 8px; border: 1px solid #444; white-space: nowrap; }
         </style>
     """, unsafe_allow_html=True)
-
     b_names = [b["Имя"] for b in m_store["staff_bakers"]]
     a_names = [a["Имя"] for a in m_store["staff_assemblers"]]
-    
     with t_b:
         df_b = st.session_state.history[m_key].loc[st.session_state.history[m_key].index.intersection(b_names)]
         if not df_b.empty:
@@ -241,7 +216,6 @@ for e in m_store["staff_assemblers"]:
         h = cur_df.loc[e["Имя"]].sum()
         p = (h/12)*e["Ставка"]
         a_r.append({"Сотрудник": e["Имя"], "Часы": int(h), "Зарплата": int(p)})
-
 cv1, cv2 = st.columns(2)
 with cv1:
     st.markdown("#### 👨‍🍳 Выпечка")

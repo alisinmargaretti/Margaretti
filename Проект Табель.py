@@ -78,26 +78,44 @@ def remove_baker(index): m_store["staff_bakers"].pop(index); save_data(); st.rer
 def remove_assembler(index): m_store["staff_assemblers"].pop(index); save_data(); st.rerun()
 
 def generate_auto_schedule(plan_bases_total, plan_pizza, b_perf, a_perf, shifts_day, n_days, bakers, assemblers):
-    b_shifts_needed = int(np.ceil(plan_bases_total / b_perf / shifts_day)) if b_perf > 0 else 0
+    # Рассчитываем, сколько ВСЕГО смен цеха выпечки нужно на месяц
+    # Смена цеха = работа сразу всех пекарей
+    total_needed_b_shifts = int(np.ceil(plan_bases_total / b_perf / shifts_day)) if b_perf > 0 else 0
+    
+    # Определяем ДНИ, в которые будет работать цех выпечки (равномерно по месяцу)
+    if total_needed_b_shifts > 0:
+        # Выбираем дни работы (например, каждый 2-й день и т.д.)
+        b_work_days = np.linspace(0, n_days - 1, min(total_needed_b_shifts, n_days), dtype=int)
+    else:
+        b_work_days = []
+
+    schedule = {}
+    
+    # Назначаем эти выбранные дни ВСЕМ пекарям
+    for emp in bakers:
+        row = [0.0] * n_days
+        start_day = emp.get("Начало", 1) - 1 # Учет дня выхода на работу
+        for day_idx in b_work_days:
+            if day_idx >= start_day:
+                row[day_idx] = 12.0
+        schedule[emp["Имя"]] = row
+
+    # Логика для сборщиков (остается прежней — они могут работать гибко)
     p_shifts_total = int(np.ceil(plan_pizza / a_perf)) if a_perf > 0 else 0
     num_a = len(assemblers)
     shifts_per_assm = int(np.ceil(p_shifts_total / num_a / shifts_day)) if num_a > 0 else 0
-    schedule = {}
-    for emp in bakers:
-        s = emp.get("Начало", 1)
-        avail = n_days - s + 1
-        indices = np.linspace(s-1, n_days-1, min(b_shifts_needed, avail), dtype=int) if avail > 0 else []
-        row = [0.0] * n_days
-        for idx in indices: row[idx] = 12.0
-        schedule[emp["Имя"]] = row
+    
     for emp in assemblers:
         s = emp.get("Начало", 1)
         avail = n_days - s + 1
+        # Сборщиков распределяем индивидуально, так как их работа более дробная
         indices = np.linspace(s-1, n_days-1, min(shifts_per_assm * shifts_day, avail), dtype=int) if avail > 0 else []
         row = [0.0] * n_days
         for idx in indices: row[idx] = 12.0
         schedule[emp["Имя"]] = row
+        
     return pd.DataFrame(schedule, index=range(1, n_days+1)).T
+
 
 st.sidebar.header("⚙️ Настройки")
 with st.sidebar.expander("🏗️ Параметры производства", expanded=False):

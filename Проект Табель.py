@@ -175,32 +175,39 @@ def get_circle(h):
 
 with st.expander("📋 Визуальный контроль смен", expanded=True):
     t_b, t_a = st.tabs(["👨‍🍳 Цех выпечки", "🛠️ Цех сборки"])
-    b_names = [b["Имя"] for b in m_store["staff_bakers"]]
-    a_names = [a["Имя"] for a in m_store["staff_assemblers"]]
     
-    # CSS для горизонтальной прокрутки
     st.markdown("""
         <style>
         .scroll-container {
             width: 100%;
             overflow-x: auto;
-            white-space: nowrap;
-            border: 1px solid #ddd;
+            border: 1px solid #444;
             border-radius: 5px;
-            padding: 10px;
+            margin-bottom: 20px;
         }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 8px; border: 1px solid #444; text-align: center; }
+        .scroll-container table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .scroll-container th, .scroll-container td {
+            text-align: center;
+            padding: 8px;
+            border: 1px solid #444;
+            white-space: nowrap;
+        }
         </style>
     """, unsafe_allow_html=True)
 
+    b_names = [b["Имя"] for b in m_store["staff_bakers"]]
+    a_names = [a["Имя"] for a in m_store["staff_assemblers"]]
+    
     with t_b:
-        df_b = st.session_state.history[m_key][st.session_state.history[m_key].index.isin(b_names)]
+        df_b = st.session_state.history[m_key].loc[st.session_state.history[m_key].index.intersection(b_names)]
         if not df_b.empty:
             html_table = df_b.map(get_circle).to_html(escape=False)
             st.markdown(f'<div class="scroll-container">{html_table}</div>', unsafe_allow_html=True)
     with t_a:
-        df_a = st.session_state.history[m_key][st.session_state.history[m_key].index.isin(a_names)]
+        df_a = st.session_state.history[m_key].loc[st.session_state.history[m_key].index.intersection(a_names)]
         if not df_a.empty:
             html_table = df_a.map(get_circle).to_html(escape=False)
             st.markdown(f'<div class="scroll-container">{html_table}</div>', unsafe_allow_html=True)
